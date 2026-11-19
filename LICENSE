@@ -21,4 +21,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Third-party: Excalidraw (MIT), MathJax (Apache-2.0), React (MIT),
-Gaegu and Noto Sans KR font subsets (SIL OFL 1.1, see web/public/kfonts/LICENSE.txt).
+Korean font subsets — Gaegu, Noto Sans KR, Nanum Pen Script, Black Han Sans, Nanum Gothic Coding, Jua, Nanum Myeongjo (SIL OFL 1.1, see web/public/kfonts/LICENSE.txt).

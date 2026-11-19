@@ -60,7 +60,7 @@ body { background: var(--wb-bg); color: var(--wb-fg); font: 15px/1.6 system-ui, 
 .wb-group:last-child { border-right: 0; }
 .wb-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 62px; height: 62px; padding: 4px 6px;
   border: 0; border-radius: 12px; background: transparent; color: var(--dk-fg); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-.wb-tool:hover { background: var(--dk-on); }
+@media (hover: hover) { .wb-tool:hover { background: var(--dk-on); } }
 .wb-tool.on { background: var(--dk-on); color: var(--dk-onfg); box-shadow: inset 0 0 0 2px var(--dk-onfg); }
 .wb-tool:focus-visible, .wb-seg:focus-visible, .wb-swatch:focus-visible { outline: 3px solid var(--dk-onfg); outline-offset: 1px; }
 .wb-swatch { width: 44px; height: 44px; border-radius: 50%; border: 2px solid transparent; background: transparent; padding: 4px; cursor: pointer; }
@@ -71,8 +71,6 @@ body { background: var(--wb-bg); color: var(--wb-fg); font: 15px/1.6 system-ui, 
 .wb-inks .wb-swatch { width: 28px; height: 28px; padding: 2px; }
 .wb-inks .wb-more { grid-column: 5; grid-row: 1 / span 2; height: 58px; border-radius: 14px; }
 .wb-inks .wb-more i { border-radius: 10px; display: grid; place-items: center; font: 700 18px/1 system-ui, sans-serif; color: var(--dk-onfg); box-shadow: inset 0 0 0 1px var(--dk-line); }
-.wb-more-pop { position: absolute; bottom: calc(max(14px, env(safe-area-inset-bottom, 0px)) + 96px); left: 50%; transform: translateX(-50%); z-index: 30; padding: 12px; border-radius: 14px;
-  background: var(--dk-bg); border: 1px solid var(--dk-line); box-shadow: 0 10px 30px rgba(0,0,0,.25); display: grid; gap: 10px; }
 .wb-more-grid { display: grid; grid-template-columns: repeat(6, 30px); gap: 4px; }
 .wb-more-grid .wb-swatch { width: 30px; height: 30px; padding: 2px; }
 .wb-more-custom { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--dk-onfg); }
@@ -83,16 +81,8 @@ body { background: var(--wb-bg); color: var(--wb-fg); font: 15px/1.6 system-ui, 
 .wb-dot { display: inline-block; border-radius: 50%; }
 .wb-seg { height: 44px; min-width: 64px; padding: 0 12px; border: 1px solid var(--dk-line); border-radius: 10px; background: transparent; color: var(--dk-fg); font-size: 15px; cursor: pointer; }
 .wb-seg.on { background: var(--dk-on); color: var(--dk-onfg); border-color: var(--dk-onfg); font-weight: 700; }
-.wb-font-meet { font-family: "Nunito", "Noto Sans KR", sans-serif; font-size: 14px; }
-.wb-font-cute { font-family: "Excalifont", "Gaegu", cursive; font-size: 17px; }
-.wb-font-math { font-family: "Times New Roman", serif; font-style: italic; }
 .wb-hint { font-size: 13px; color: var(--dk-mut); max-width: 220px; }
 .wb-board .wb-people { margin-right: 4px; }
-@media (max-width: 760px) {
-  .wb-dock { left: 8px; right: 8px; transform: none; max-width: none; justify-content: flex-start; border-radius: 14px; padding: 6px; }
-  .wb-tool { min-width: 50px; height: 54px; font-size: 11px; }
-  .wb-slider input[type=range] { width: 110px; }
-}
 /* 수식 창 */
 .wb-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(15, 18, 25, .45); padding: 16px; }
 .wb-modal-box { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--dk-bg); color: var(--dk-fg); border-radius: 16px; padding: 20px 22px; box-shadow: var(--dk-shadow); display: grid; gap: 12px; }
@@ -105,3 +95,69 @@ body { background: var(--wb-bg); color: var(--wb-fg); font: 15px/1.6 system-ui, 
 .wb-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .wb-btn { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--dk-line); background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .wb-preview img.wb-stale { opacity: .35; }
+
+/* ---------- 글꼴 · 크기 · 떠 있는 창 ---------- */
+.wb-pop { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(max(14px, env(safe-area-inset-bottom, 0px)) + var(--dock-h, 80px) + 10px); z-index: 40;
+  padding: 10px; border-radius: 14px; background: var(--dk-bg); color: var(--dk-fg); border: 1px solid var(--dk-line); box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  display: grid; gap: 8px; max-width: calc(100vw - 24px); max-height: 60vh; overflow: auto; }
+.wb-pop-top { bottom: auto; top: max(64px, env(safe-area-inset-top, 0px)); }
+.wb-font-pop { gap: 2px; min-width: 260px; }
+.wb-font-item { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: inherit; cursor: pointer; text-align: left; min-height: 44px; }
+.wb-font-item.on { background: var(--dk-on); color: var(--dk-onfg); }
+.wb-font-item:disabled { opacity: .4; cursor: default; }
+.wb-font-name { font-size: 22px; line-height: 1.25; }
+.wb-font-item small { font-size: 11.5px; color: var(--dk-mut); }
+.wb-fontbtn { min-width: 0; white-space: nowrap; }
+.wb-fontbtn span { font-size: 17px; }
+.wb-textctl { gap: 8px; }
+.wb-size { display: flex; align-items: center; gap: 4px; }
+.wb-size .wb-seg { min-width: 44px; padding: 0 8px; font-weight: 700; }
+.wb-size b { min-width: 30px; text-align: center; font-size: 14px; }
+
+/* ---------- 폰 ---------- */
+.wb-mtop { position: fixed; z-index: 25; top: max(8px, env(safe-area-inset-top, 0px)); left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; gap: 6px; pointer-events: none; }
+.wb-mtop > * { pointer-events: auto; }
+.wb-mfill { flex: 1; pointer-events: none !important; }
+.wb-mbtn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--dk-line); background: var(--dk-bg); color: var(--dk-fg); box-shadow: var(--dk-shadow); padding: 0; cursor: pointer; }
+.wb-mbtn svg { width: 22px; height: 22px; }
+.wb-mchip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 999px; background: var(--dk-bg); color: var(--dk-mut); border: 1px solid var(--dk-line); font-size: 12.5px; font-weight: 600; white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
+.wb-mdot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.wb-msheet-back { position: fixed; inset: 0; z-index: 45; background: rgba(15, 18, 25, .35); }
+.wb-mmenu { position: absolute; top: max(60px, calc(env(safe-area-inset-top, 0px) + 56px)); left: 8px; width: min(320px, calc(100vw - 16px)); display: grid; padding: 6px; border-radius: 14px;
+  background: var(--dk-bg); color: var(--dk-fg); border: 1px solid var(--dk-line); box-shadow: var(--dk-shadow); }
+.wb-mmenu button { min-height: 48px; text-align: left; padding: 0 14px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
+.wb-mmenu button:active { background: var(--dk-on); }
+.wb-mmenu-who { margin: 6px 14px 4px; font-size: 12.5px; color: var(--dk-mut); }
+
+.wb-sheet { position: fixed; z-index: 35; left: 0; right: 0; bottom: 0; padding: 12px max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-bottom, 0px));
+  background: var(--dk-bg); color: var(--dk-fg); border-top: 1px solid var(--dk-line); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18);
+  display: grid; gap: 10px; transform: translateY(110%); opacity: 0; pointer-events: none; transition: transform .16s ease, opacity .16s ease; }
+.wb-sheet.open { transform: none; opacity: 1; pointer-events: auto; }
+.wb-sheet textarea { width: 100%; box-sizing: border-box; min-height: 84px; max-height: 32vh; font-size: 20px; line-height: 1.4; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--dk-line); background: var(--dk-bg); color: var(--dk-fg); resize: none; }
+.wb-sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wb-sheet-inks .wb-inks { border: 0; padding: 0; }
+.wb-sheet-actions { justify-content: flex-end; }
+.wb-sheet-actions button { min-width: 96px; }
+.wb-sheeting .wb-dock { display: none; }
+
+@media (max-width: 760px) {
+  .wb-dock { left: max(6px, env(safe-area-inset-left, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); transform: none; max-width: none; bottom: max(6px, env(safe-area-inset-bottom, 0px));
+    flex-wrap: wrap; justify-content: center; gap: 6px 4px; padding: 6px; border-radius: 16px; overflow: visible; }
+  .wb-dock .wb-desk { display: none; }
+  .wb-dock .wb-group { border-right: 0; padding: 0 2px; }
+  .wb-dock .wb-tools { order: 2; width: 100%; justify-content: space-between; gap: 2px; padding: 0; }
+  .wb-tool { flex: 1 1 0; min-width: 0; height: 52px; padding: 2px; font-size: 11px; gap: 1px; border-radius: 10px; }
+  .wb-tool svg { width: 22px; height: 22px; }
+  .wb-tool span { white-space: nowrap; }
+  .wb-slider input[type=range] { width: 120px; }
+  .wb-hint { max-width: none; font-size: 12.5px; }
+  .wb-pop { left: 8px; right: 8px; transform: none; bottom: calc(max(6px, env(safe-area-inset-bottom, 0px)) + var(--dock-h, 120px) + 8px); }
+  .wb-more-grid { grid-template-columns: repeat(6, 36px); justify-content: center; }
+  .wb-more-grid .wb-swatch { width: 36px; height: 36px; }
+  .wb-pop-top { bottom: auto; top: max(60px, calc(env(safe-area-inset-top, 0px) + 56px)); }
+  .wb-page input { font-size: 16px; }   /* iOS 는 16px 보다 작은 입력칸을 누르면 화면을 확대한다 */
+  .wb-modal-box textarea { font-size: 16px; }
+}
+@media (hover: hover) { .wb-font-item:hover { background: var(--dk-on); color: var(--dk-onfg); } }

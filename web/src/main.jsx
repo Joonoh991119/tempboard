@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@excalidraw/excalidraw/index.css";
 import "./kfonts.css";
+import "./kfonts-extra.css";
 import "./app.css";
 import { api } from "./api.js";
 import Board from "./Board.jsx";

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Excalidraw, MainMenu, CaptureUpdateAction, reconcileElements, restoreElements,
-  convertToExcalidrawElements, viewportCoordsToSceneCoords, FONT_FAMILY,
+  convertToExcalidrawElements, viewportCoordsToSceneCoords, FONT_FAMILY, exportToBlob,
 } from "@excalidraw/excalidraw";
 import { selectedTexts, selectedStyle, restyleText } from "./textstyle.js";
 import { api } from "./api.js";
@@ -39,11 +39,24 @@ const TOOLS = [
   { id: "laser", label: "레이저", key: "K", icon: "M12 12m-2 0a2 2 0 104 0 2 2 0 10-4 0M4 20l6-6M14 4l2 3M20 10l-3 1M17 4l-2 3" },
   { id: "hand", label: "화면 이동", key: "H", icon: "M8 12V6a1.5 1.5 0 013 0v5V4.5a1.5 1.5 0 013 0V11V6a1.5 1.5 0 013 0v7a6 6 0 01-6 6h-1a6 6 0 01-5-3l-2-4a1.5 1.5 0 012.5-1.5z" },
 ];
+// 글꼴 — Excalidraw 글꼴 칸마다 한글 글꼴을 붙였다(kfonts.css · kfonts-extra.css). 영문은 그 칸의 Excalidraw 글꼴.
 const FONTS = [
-  { id: "meet", label: "Noto Sans KR", family: FONT_FAMILY.Nunito, hint: "Noto Sans KR(영문 Nunito)" },
-  { id: "cute", label: "Gaegu", family: FONT_FAMILY.Excalifont, hint: "Gaegu(영문 Excalifont)" },
-  { id: "math", label: "TeX", family: null, hint: "LaTeX 를 MathJax TeX 글꼴로 조판" },
+  { id: "meet", label: "고딕", css: "Nunito", family: FONT_FAMILY.Nunito, hint: "Noto Sans KR · Nunito" },
+  { id: "cute", label: "손글씨", css: "Excalifont", family: FONT_FAMILY.Excalifont, hint: "Gaegu · Excalifont" },
+  { id: "pen", label: "펜글씨", css: "Virgil", family: FONT_FAMILY.Virgil, hint: "나눔손글씨 펜 · Virgil" },
+  { id: "round", label: "동글", css: "Comic Shanns", family: FONT_FAMILY["Comic Shanns"], hint: "주아 · Comic Shanns" },
+  { id: "bold", label: "굵은 제목", css: "Lilita One", family: FONT_FAMILY["Lilita One"], hint: "검은고딕 · Lilita One" },
+  { id: "serif", label: "명조", css: "Liberation Sans", family: FONT_FAMILY["Liberation Sans"], hint: "나눔명조 · Liberation Sans" },
+  { id: "code", label: "코드", css: "Cascadia", family: FONT_FAMILY.Cascadia, hint: "나눔고딕코딩 · Cascadia" },
+  { id: "math", label: "수식(TeX)", css: "Times New Roman", family: null, hint: "LaTeX 를 MathJax TeX 글꼴로 조판" },
 ];
+const SIZES = [12, 16, 20, 24, 28, 36, 48, 64, 96];
+const stepSize = (s, d) => {
+  const i = SIZES.findIndex((x) => x >= (s || 24));
+  const at = i < 0 ? SIZES.length - 1 : i;
+  return SIZES[Math.max(0, Math.min(SIZES.length - 1, SIZES[at] === s || d < 0 ? at + d : at + d - 1))];
+};
+const bump = (e) => ({ ...e, version: e.version + 1, versionNonce: Math.floor(Math.random() * 2 ** 31) });
 // 칠 수 있는 단축키 — 나머지 한 글자 단축키(도형 · 화살표 등)는 막는다
 const ALLOWED_KEYS = new Set(["v", "p", "e", "t", "k", "h", "m", "1", "7", "8", "0", "escape", "delete", "backspace", "enter", " ",
   "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "meta", "alt", "tab"]);
@@ -162,13 +175,24 @@ export default function Board({ id, me }) {
   const [theme, setTheme] = useState(() => store.get("wb-theme", "light"));
   const [tool, setTool] = useState("freedraw");
   const [width, setWidth] = useState(() => { const w = +store.get("wb-width2", 1.5); return w >= 0.5 && w <= 8 ? w : 1.5; });
-  const [font, setFont] = useState(() => store.get("wb-font", "meet"));
+  const [font, setFont] = useState(() => { const f = store.get("wb-font", "meet"); return FONTS.some((x) => x.id === f && x.family) ? f : "meet"; });
   const [fontSize, setFontSize] = useState(() => +store.get("wb-fontsize", 24));
-  const [ink, setInk] = useState(() => { const c = store.get("wb-ink", ""); return /^#[0-9a-f]{6}$/i.test(c) ? c : (me.color || "#1e1e1e"); });
+  const [ink, setInk] = useState(() => { const c = store.get("wb-ink", ""); return /^#[0-9a-f]{6}$/i.test(c) ? c : "#1e1e1e"; });   // 기본은 검정(사람 색은 노랑일 수 있어 흰 바탕에서 안 보인다)
   const [math, setMath] = useState(null);        // 수식 창 { initial }
   const [textSel, setTextSel] = useState(false);   // 글이 하나라도 선택돼 있나 — 글꼴 · 크기 칸을 보이고 바로 바꾼다
   const [moreInk, setMoreInk] = useState(false);   // 색 더 보기 창
   const [mathSel, setMathSel] = useState(false); // 수식 하나가 선택돼 있나 — 버튼이 '수식 고침' 으로
+  const [editing, setEditing] = useState(false);   // 글 상자를 쓰는 중인가(글꼴 · 크기 칸을 그대로 둔다)
+  const [fontPop, setFontPop] = useState(false);   // 글꼴 고르기 창
+  const [menu, setMenu] = useState(false);         // 폰 메뉴
+  const [sheet, setSheet] = useState(null);        // 폰 글 쓰기 창 { x, y, editId }
+  const [sheetText, setSheetText] = useState("");
+  const sheetRef = useRef(null);
+  const tap = useRef(null);                        // 폰: 글 도구로 누른 자리 · 두 번 누른 글
+  const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  const dockRef = useRef(null);
+  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  const coarse = useMemo(() => window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0 && !window.matchMedia("(pointer: fine)").matches, []);
   const [meta, setMeta] = useState(null);
   const [initial, setInitial] = useState(null);
   const [users, setUsers] = useState([]);
@@ -277,6 +301,8 @@ export default function Board({ id, me }) {
     const selIds = Object.keys(appState.selectedElementIds || {}).filter((k) => appState.selectedElementIds[k]);
     const ms = selIds.length === 1 && elements.some((e) => e.id === selIds[0] && e.type === "image" && e.customData && e.customData.latex);
     if (ms !== mathSel) setMathSel(ms);
+    const ed = !!appState.editingTextElement;
+    if (ed !== editing) setEditing(ed);
     const texts = selectedTexts(elements, appState.selectedElementIds || {});
     const ts = texts.length > 0;
     if (ts) {
@@ -297,7 +323,7 @@ export default function Board({ id, me }) {
       }
     }
     if (pending.current.size && !timer.current) timer.current = setTimeout(flush, drawing.current ? PUSH_DRAW_MS : PUSH_MS);
-  }, [excal, tool, me, id, client, flush, mathSel, textSel]);
+  }, [excal, tool, me, id, client, flush, mathSel, textSel, editing]);
 
   const onPointerUpdate = useCallback(({ pointer, button }) => {
     const now = Date.now();
@@ -333,26 +359,31 @@ export default function Board({ id, me }) {
   const setInkColor = (c) => {
     setInk(c); store.set("wb-ink", c);
     excal?.updateScene({ appState: { currentItemStrokeColor: c }, captureUpdate: CaptureUpdateAction.NEVER });
+    if (sheet) return;   // 글 쓰기 창의 색 — 넣을 때 쓴다
     applyToSelection({ strokeColor: c }, (e) => e.type !== "image");
   };
   // 선택한 글을 새 글꼴 · 크기로 다시 잰다(글꼴만 바꾸면 상자 크기가 옛 글꼴대로 남는다)
   const restyleSelectedText = (patch) => {
-    if (!excal) return false;
-    const els = restyleText(excal.getSceneElementsIncludingDeleted(),
-      excal.getAppState().selectedElementIds || {}, patch, restoreElements);
+    if (!excal || sheet) return false;
+    const st = excal.getAppState();
+    const sel = { ...(st.selectedElementIds || {}) };
+    if (st.editingTextElement) sel[st.editingTextElement.id] = true;   // 쓰는 중인 글도 바로 바꾼다
+    const els = restyleText(excal.getSceneElementsIncludingDeleted(), sel, patch, restoreElements);
     if (!els) return false;
     excal.updateScene({ elements: els, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     return true;
   };
   const setFontChoice = (f) => {
+    setFontPop(false);
     if (f === "math") { openMath(); return; }   // eslint-disable-line no-use-before-define
     setFont(f); store.set("wb-font", f);
     const fam = FONTS.find((x) => x.id === f).family;
     excal?.updateScene({ appState: { currentItemFontFamily: fam }, captureUpdate: CaptureUpdateAction.NEVER });
     if (restyleSelectedText({ fontFamily: fam })) return;   // 고른 글이 있으면 그 글을 바꾸고 도구는 그대로
-    if (tool !== "text") pick("text");
+    if (tool !== "text" && !sheet) pick("text");
   };
   const setTextSize = (s) => {
+    if (!s) return;
     setFontSize(s); store.set("wb-fontsize", s);
     excal?.updateScene({ appState: { currentItemFontSize: s }, captureUpdate: CaptureUpdateAction.NEVER });
     restyleSelectedText({ fontSize: s });
@@ -376,6 +407,115 @@ export default function Board({ id, me }) {
     const els = excal.getSceneElementsIncludingDeleted().map((e) => (ids.has(e.id) || (e.containerId && ids.has(e.containerId)) ? { ...e, isDeleted: true, version: e.version + 1, versionNonce: Math.floor(Math.random() * 2 ** 31) } : e));
     excal.updateScene({ elements: els, appState: { selectedElementIds: {} }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   };
+
+  const savePng = async () => {
+    if (!excal) return;
+    const els = excal.getSceneElements();
+    if (!els.length) { excal.setToast({ message: "저장할 그림이 없어요", duration: 2000 }); return; }
+    const blob = await exportToBlob({ elements: els, files: excal.getFiles(), appState: { ...excal.getAppState(), exportBackground: true }, mimeType: "image/png" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `${(meta && meta.title) || "board"}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+
+  // ---------------- 폰: 글은 아래 창에서 쓴다
+  // Excalidraw 의 글 상자는 누른 뒤 타이머로 초점을 줘서, 폰(특히 iOS)에서는 자판이 안 뜨고 빈 상자만 남는다.
+  // 폰에서는 늘 붙어 있는 입력칸에 누르는 그 순간 초점을 줘서 자판이 바로 뜨게 한다.
+  const hitText = (sx, sy) => excal.getSceneElements().filter((e) => e.type === "text" && !e.containerId)
+    .reverse().find((e) => sx >= e.x - 10 && sx <= e.x + e.width + 10 && sy >= e.y - 10 && sy <= e.y + e.height + 10);
+  const openSheet = (cx, cy, hit) => {
+    const st = excal.getAppState();
+    const sc = viewportCoordsToSceneCoords({ clientX: cx, clientY: cy }, st);
+    const el = hit === undefined ? hitText(sc.x, sc.y) : hit;
+    if (sheetRef.current) sheetRef.current.focus({ preventScroll: true });   // 누른 그 순간 — 자판이 뜬다
+    setSheetText(el ? (el.originalText ?? el.text) : "");
+    if (el) { const f = FONTS.find((x) => x.family === el.fontFamily); if (f) setFont(f.id); setFontSize(el.fontSize); if (el.strokeColor) setInk(el.strokeColor); }
+    setSheet({ x: sc.x, y: sc.y, editId: el ? el.id : null });
+  };
+  const closeSheet = () => { setSheet(null); setSheetText(""); if (sheetRef.current) sheetRef.current.blur(); };
+  const commitSheet = () => {
+    if (!excal || !sheet) return;
+    const text = sheetText.replace(/\s+$/, "");
+    const fam = (FONTS.find((x) => x.id === font) || FONTS[0]).family || FONT_FAMILY.Nunito;
+    const size = fontSize || 24;
+    let els = excal.getSceneElementsIncludingDeleted();
+    let select = {};
+    if (sheet.editId) {
+      if (!text) els = els.map((e) => (e.id === sheet.editId ? bump({ ...e, isDeleted: true }) : e));
+      else {
+        const input = els.map((e) => (e.id === sheet.editId ? { ...e, text, originalText: text, fontFamily: fam, fontSize: size, strokeColor: ink } : e));
+        const m = new Map(restoreElements(input, null, { repairBindings: true, refreshDimensions: true }).map((e) => [e.id, e]));
+        els = els.map((e) => (e.id === sheet.editId ? bump({ ...e, ...m.get(e.id) }) : e));
+        select = { [sheet.editId]: true };
+      }
+    } else if (text) {
+      const [el] = convertToExcalidrawElements([{ type: "text", x: sheet.x, y: sheet.y - size * 0.6, text, fontSize: size, fontFamily: fam, strokeColor: ink, roughness: 0 }]);
+      els = [...els, el];
+      select = { [el.id]: true };
+    }
+    excal.updateScene({ elements: els, appState: { selectedElementIds: select }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    excal.setActiveTool({ type: "selection" }); setTool("selection");
+    closeSheet();
+  };
+  useEffect(() => {
+    if (!excal || !coarse || me.role === "view") return;
+    const onCanvas = (e) => e.target instanceof HTMLCanvasElement && e.target.closest(".excalidraw");
+    const down = (e) => {
+      if (!onCanvas(e) || !e.isPrimary) return;
+      const t = excal.getAppState().activeTool.type;
+      if (t === "text") {   // 글 도구: Excalidraw 가 글 상자를 만들지 않게 막고, 손을 뗄 때 창을 연다
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        tap.current = { x: e.clientX, y: e.clientY, touch: e.pointerType === "touch", hit: undefined };
+        return;
+      }
+      if (t === "selection") {   // 같은 글을 빨리 두 번 누르면 고치기
+        const now = Date.now(), L = lastTap.current;
+        lastTap.current = { t: now, x: e.clientX, y: e.clientY };
+        if (now - L.t < 400 && Math.hypot(e.clientX - L.x, e.clientY - L.y) < 24) {
+          const sc = viewportCoordsToSceneCoords({ clientX: e.clientX, clientY: e.clientY }, excal.getAppState());
+          const hit = hitText(sc.x, sc.y);
+          if (hit) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); tap.current = { x: e.clientX, y: e.clientY, touch: e.pointerType === "touch", hit }; lastTap.current = { t: 0, x: 0, y: 0 }; }
+        }
+      }
+    };
+    const stopTouch = (e) => {   // Excalidraw 의 두 번 누르기(글 상자 열기)도 막는다
+      if (tap.current && onCanvas(e)) { e.stopPropagation(); e.stopImmediatePropagation(); }
+    };
+    const finish = (e) => {
+      const t = tap.current; if (!t) return;
+      tap.current = null;
+      e.stopPropagation();
+      if (Math.hypot((e.clientX ?? e.changedTouches?.[0]?.clientX ?? t.x) - t.x, (e.clientY ?? e.changedTouches?.[0]?.clientY ?? t.y) - t.y) > 16) return;
+      openSheet(t.x, t.y, t.hit);
+    };
+    const up = (e) => { if (tap.current && !tap.current.touch) finish(e); else if (tap.current) e.stopPropagation(); };
+    const end = (e) => { if (tap.current && tap.current.touch) { if (e.cancelable) e.preventDefault(); finish(e); } };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("touchstart", stopTouch, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("touchend", end, { capture: true, passive: false });
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("touchstart", stopTouch, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("touchend", end, { capture: true, passive: false });
+    };
+  }, [excal, coarse, me.role]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const q = window.matchMedia("(max-width: 760px)");
+    const f = () => setMobile(q.matches);
+    q.addEventListener ? q.addEventListener("change", f) : q.addListener(f);
+    return () => (q.removeEventListener ? q.removeEventListener("change", f) : q.removeListener(f));
+  }, []);
+  // 떠 있는 창(색 · 글꼴)을 도구막대 바로 위에 — 폰에서는 도구막대가 두 줄이라 높이를 잰다
+  useEffect(() => {
+    const d = dockRef.current; if (!d || !("ResizeObserver" in window)) return;
+    const ro = new ResizeObserver(() => d.parentElement && d.parentElement.style.setProperty("--dock-h", `${d.offsetHeight}px`));
+    ro.observe(d);
+    return () => ro.disconnect();
+  });
 
   // ---------------- 수식
   const openMath = useCallback(() => {
@@ -422,7 +562,8 @@ export default function Board({ id, me }) {
       const tgt = e.target;
       if (tgt && (tgt.tagName === "TEXTAREA" || tgt.tagName === "INPUT" || tgt.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = String(e.key || "").toLowerCase();
+      // 한글 입력기가 켜져 있으면 e.key 가 'ㅅ' 처럼 온다 — 자판 위치(e.code)로 본다
+      const k = /^Key[A-Z]$/.test(e.code || "") ? e.code.slice(3).toLowerCase() : String(e.key || "").toLowerCase();
       if (k === "m") { e.preventDefault(); e.stopPropagation(); openMath(); return; }
       if (k.length === 1 && !ALLOWED_KEYS.has(k)) { e.preventDefault(); e.stopPropagation(); }
     };
@@ -439,10 +580,38 @@ export default function Board({ id, me }) {
 
   if (!initial) return <div className="wb-page wb-muted">{status}</div>;
   const others = users.filter((u) => u.client !== client);
-  const showInk = tool === "freedraw" || tool === "text" || tool === "selection";
+  const showInk = tool === "freedraw" || tool === "text" || tool === "selection" || !!sheet;
   const viewOnly = me.role === "view";
+  const showText = tool === "text" || textSel || editing || !!sheet;
+  const curFont = FONTS.find((f) => f.id === font);
+  const keep = (e) => { if (!(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) e.preventDefault(); };   // 눌러도 초점(쓰던 글)을 뺏지 않는다
+  const fontButton = (
+    <button type="button" className="wb-seg wb-fontbtn" title="글꼴" aria-haspopup="true" aria-expanded={fontPop} onClick={() => setFontPop((v) => !v)}>
+      <span style={{ fontFamily: curFont ? `"${curFont.css}"` : undefined }}>{curFont ? curFont.label : "글꼴 섞임"}</span> ▾
+    </button>
+  );
+  const sizeControl = (
+    <div className="wb-size" role="group" aria-label="글자 크기">
+      <button type="button" className="wb-seg" aria-label="글자 작게" onClick={() => setTextSize(stepSize(fontSize, -1))}>가−</button>
+      <b title="글자 크기">{fontSize ?? "섞임"}</b>
+      <button type="button" className="wb-seg" aria-label="글자 크게" onClick={() => setTextSize(stepSize(fontSize, 1))}>가+</button>
+    </div>
+  );
+  const inks = (
+    <div className="wb-group wb-inks" aria-label="색">
+      {PALETTE.map(([c, label]) => (
+        <button key={c} type="button" className={`wb-swatch ${norm(ink) === norm(c) ? "on" : ""}`} title={label} aria-label={`색 ${label}`} onClick={() => setInkColor(c)}>
+          <i style={{ background: c, filter: theme === "dark" ? DARK_FILTER : undefined }} />
+        </button>
+      ))}
+      <button type="button" className={`wb-swatch wb-more ${PALETTE.some(([c]) => norm(c) === norm(ink)) ? "" : "on"}`} title="색 더 보기" aria-label="색 더 보기" aria-expanded={moreInk}
+        onClick={() => setMoreInk((v) => !v)}>
+        <i style={PALETTE.some(([c]) => norm(c) === norm(ink)) ? undefined : { background: ink, filter: theme === "dark" ? DARK_FILTER : undefined }}>{PALETTE.some(([c]) => norm(c) === norm(ink)) ? "+" : ""}</i>
+      </button>
+    </div>
+  );
   return (
-    <div className={`wb-board wb-theme-${theme}`}>
+    <div className={`wb-board wb-theme-${theme}${mobile ? " wb-mobile" : ""}${sheet ? " wb-sheeting" : ""}`}>
       <Excalidraw
         excalidrawAPI={setExcal}
         initialData={initial}
@@ -481,29 +650,52 @@ export default function Board({ id, me }) {
         </MainMenu>
       </Excalidraw>
 
-      {!viewOnly && <div className="wb-dock" role="toolbar" aria-label="도구"
-        onMouseDown={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}
+      {mobile && (
+        <div className="wb-mtop" onMouseDown={keep}>
+          <button type="button" className="wb-mbtn" aria-label="메뉴" aria-expanded={menu} onClick={() => setMenu((v) => !v)}><Icon d="M4 7h16M4 12h16M4 17h16" /></button>
+          {!viewOnly && <>
+            <button type="button" className="wb-mbtn" aria-label="실행취소" onClick={() => key("z")}><Icon d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" /></button>
+            <button type="button" className="wb-mbtn" aria-label="다시 실행" onClick={() => key("z", true)}><Icon d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" /></button>
+            <button type="button" className="wb-mbtn" aria-label="선택한 것 지우기" onClick={deleteSelected}><Icon d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></button>
+          </>}
+          <span className="wb-mfill" />
+          {status && <span className="wb-mchip">{status}</span>}
+          {me.expires_at && <span className="wb-mchip">{left(me.expires_at)}</span>}
+          {viewOnly && <span className="wb-mchip">보기 전용</span>}
+          <span className="wb-mchip" title={[me.short || me.name, ...others.map((u) => u.short || u.user)].join(", ")}>
+            <i className="wb-mdot" style={{ background: me.color }} />{others.length ? `${others.length + 1}명` : (me.short || me.name)}
+          </span>
+        </div>
+      )}
+      {mobile && menu && (
+        <div className="wb-msheet-back" onClick={() => setMenu(false)}>
+          <div className="wb-mmenu" role="menu" onClick={(e) => e.stopPropagation()}>
+            <p className="wb-mmenu-who">{[me.short || me.name, ...others.map((u) => u.short || u.user)].join(" · ")}</p>
+            <button type="button" role="menuitem" onClick={() => { setMenu(false); location.hash = ""; }}>← 보드 목록</button>
+            {!viewOnly && <button type="button" role="menuitem" onClick={() => { setMenu(false); invite("edit"); }}>초대 링크 복사(같이 그리기)</button>}
+            {me.invite && me.invite.view && <button type="button" role="menuitem" onClick={() => { setMenu(false); invite("view"); }}>보기 전용 링크 복사</button>}
+            <button type="button" role="menuitem" onClick={() => { setMenu(false); savePng(); }}>그림(PNG)으로 저장</button>
+            {!viewOnly && <button type="button" role="menuitem" onClick={async () => {
+              setMenu(false);
+              const t = window.prompt ? window.prompt("보드 이름", meta ? meta.title : "") : null;
+              if (t) setMeta(await api.rename(id, t));
+            }}>보드 이름 바꾸기</button>}
+            <button type="button" role="menuitem" onClick={() => { setMenu(false); toggleTheme(); }}>{theme === "dark" ? "밝은 화면" : "어두운 화면"}</button>
+          </div>
+        </div>
+      )}
+
+      {!viewOnly && <div className="wb-dock" role="toolbar" aria-label="도구" ref={dockRef}
+        onMouseDown={keep}
         onClick={() => setTimeout(refocus, 0)}>
-        <div className="wb-group">
+        <div className="wb-group wb-tools">
           {TOOLS.map((t) => (
             <button key={t.id} type="button" className={`wb-tool ${tool === t.id ? "on" : ""}`} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => pick(t.id)}>
-              <Icon d={t.icon} /><span>{t.id === "math" && mathSel ? "수식 고침" : t.label}</span>
+              <Icon d={t.icon} /><span>{t.id === "math" && mathSel ? "수식 고침" : (mobile && t.id === "selection" ? "선택" : mobile && t.id === "hand" ? "이동" : t.label)}</span>
             </button>
           ))}
         </div>
-        {showInk && (
-          <div className="wb-group wb-inks" aria-label="색">
-            {PALETTE.map(([c, label]) => (
-              <button key={c} type="button" className={`wb-swatch ${norm(ink) === norm(c) ? "on" : ""}`} title={label} aria-label={`색 ${label}`} onClick={() => setInkColor(c)}>
-                <i style={{ background: c, filter: theme === "dark" ? DARK_FILTER : undefined }} />
-              </button>
-            ))}
-            <button type="button" className={`wb-swatch wb-more ${PALETTE.some(([c]) => norm(c) === norm(ink)) ? "" : "on"}`} title="색 더 보기" aria-label="색 더 보기" aria-expanded={moreInk}
-              onClick={() => setMoreInk((v) => !v)}>
-              <i style={PALETTE.some(([c]) => norm(c) === norm(ink)) ? undefined : { background: ink, filter: theme === "dark" ? DARK_FILTER : undefined }}>{PALETTE.some(([c]) => norm(c) === norm(ink)) ? "+" : ""}</i>
-            </button>
-          </div>
-        )}
+        {showInk && !sheet && inks}
         {tool === "freedraw" && (
           <label className="wb-group wb-slider" title="펜 굵기">
             <span>굵기</span>
@@ -511,27 +703,15 @@ export default function Board({ id, me }) {
             <i className="wb-dot" style={{ width: Math.max(3, width * 4), height: Math.max(3, width * 4), background: ink }} />
           </label>
         )}
-        {(tool === "text" || textSel) && (
-          <>
-            <div className="wb-group" aria-label="글꼴">
-              {FONTS.map((f) => (
-                <button key={f.id} type="button" className={`wb-seg wb-font-${f.id} ${font === f.id ? "on" : ""}`} title={f.hint} onClick={() => setFontChoice(f.id)}>{f.label}</button>
-              ))}
-            </div>
-            <label className="wb-group wb-slider" title="글자 크기">
-              <span>크기</span>
-              <input type="range" min="14" max="72" step="2" value={fontSize ?? 24} onChange={(e) => setTextSize(+e.target.value)} aria-label="글자 크기" />
-              <b>{fontSize ?? "혼합"}</b>
-            </label>
-          </>
-        )}
+        {showText && !sheet && <div className="wb-group wb-textctl" aria-label="글꼴 · 크기">{fontButton}{sizeControl}</div>}
+        {tool === "text" && coarse && !sheet && <div className="wb-group wb-hint">글을 넣을 자리를 누르세요</div>}
         {tool === "laser" && <div className="wb-group wb-hint">끌면 잠깐 빛나는 선이 모두에게 보여요</div>}
-        <div className="wb-group">
+        <div className="wb-group wb-desk">
           <button type="button" className="wb-tool" title="실행취소(내 작업만)" onClick={() => key("z")}><Icon d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" /><span>취소</span></button>
           <button type="button" className="wb-tool" title="다시 실행" onClick={() => key("z", true)}><Icon d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" /><span>다시</span></button>
           <button type="button" className="wb-tool" title="선택한 것 지우기" onClick={deleteSelected}><Icon d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /><span>선택 삭제</span></button>
         </div>
-        <div className="wb-group">
+        <div className="wb-group wb-desk">
           <button type="button" className="wb-tool" title={theme === "dark" ? "밝은 화면" : "어두운 화면"} onClick={toggleTheme}>
             <Icon d={theme === "dark" ? "M12 4V2M12 22v-2M4 12H2M22 12h-2M5 5L4 4M20 20l-1-1M5 19l-1 1M20 4l-1 1M12 8a4 4 0 100 8 4 4 0 000-8z" : "M20 14A8 8 0 1110 4a6 6 0 0010 10z"} />
             <span>{theme === "dark" ? "밝게" : "어둡게"}</span>
@@ -540,8 +720,38 @@ export default function Board({ id, me }) {
         </div>
       </div>}
 
+      {/* 폰 글 쓰기 창 — 늘 붙어 있어야 누르는 순간 초점(자판)을 줄 수 있다 */}
+      {coarse && !viewOnly && (
+        <div className={`wb-sheet ${sheet ? "open" : ""}`} aria-hidden={!sheet} onMouseDown={keep}>
+          <textarea ref={sheetRef} value={sheetText} rows={3} placeholder="여기에 글을 쓰세요" aria-label="글"
+            tabIndex={sheet ? 0 : -1}
+            style={{ fontFamily: curFont && curFont.family ? `"${curFont.css}", system-ui, sans-serif` : undefined, color: theme === "dark" ? undefined : ink }}
+            onChange={(e) => setSheetText(e.target.value)}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitSheet(); } if (e.key === "Escape") closeSheet(); }} />
+          <div className="wb-sheet-row">
+            {fontButton}{sizeControl}
+          </div>
+          <div className="wb-sheet-row wb-sheet-inks">{inks}</div>
+          <div className="wb-sheet-row wb-sheet-actions">
+            <button type="button" className="wb-btn" onClick={closeSheet}>취소</button>
+            <button type="button" className="wb-primary" onClick={commitSheet}>{sheet && sheet.editId ? (sheetText.trim() ? "고치기" : "지우기") : "넣기"}</button>
+          </div>
+        </div>
+      )}
+
+      {fontPop && (
+        <div className={`wb-pop wb-font-pop${sheet ? " wb-pop-top" : ""}`} role="listbox" aria-label="글꼴" onMouseDown={keep}>
+          {FONTS.filter((f) => !sheet || f.family).map((f) => (
+            <button key={f.id} type="button" role="option" aria-selected={font === f.id} className={`wb-font-item ${font === f.id ? "on" : ""}`}
+              title={f.hint} onClick={() => setFontChoice(f.id)}>
+              <span className="wb-font-name" style={{ fontFamily: `"${f.css}", serif`, fontStyle: f.id === "math" ? "italic" : undefined }}>{f.id === "math" ? "x² + y²" : `${f.label} 가나다 Abc`}</span>
+              <small>{f.hint}</small>
+            </button>
+          ))}
+        </div>
+      )}
       {moreInk && (
-        <div className="wb-more-pop" role="dialog" aria-label="색 더 보기" onMouseDown={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}>
+        <div className={`wb-pop wb-more-pop${sheet ? " wb-pop-top" : ""}`} role="dialog" aria-label="색 더 보기" onMouseDown={keep}>
           <div className="wb-more-grid">
             {MORE_COLORS.map((c, i) => (
               <button key={c + i} type="button" className={`wb-swatch ${norm(ink) === norm(c) ? "on" : ""}`} aria-label={`색 ${c}`} title={c} onClick={() => { setInkColor(c); setMoreInk(false); }}>

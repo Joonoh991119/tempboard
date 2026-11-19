@@ -2,3 +2,7 @@
 - Gaegu (개구) — Copyright JIKJI SOFT. 화이트보드 글꼴 Gaegu(Excalidraw 의 Excalifont 가족에 한글로 붙임).
 - Noto Sans KR — Copyright Google LLC. 화이트보드 글꼴 Noto Sans KR(Nunito 가족에 한글로 붙임).
 Google Fonts 에서 받은 한글 · CJK 조각(woff2)이다. 바꾸지 않고 같은 출처로 낸다.
+- Nanum Pen Script (나눔손글씨 펜) · Nanum Gothic Coding (나눔고딕코딩) · Nanum Myeongjo (나눔명조) — Copyright NAVER Corporation. 각각 Virgil · Cascadia · Liberation Sans 가족에 한글로 붙임.
+- Black Han Sans (검은고딕) — Copyright Zess Type. Lilita One 가족에 한글로 붙임.
+- Jua (주아) — Copyright Woowa Brothers. Comic Shanns 가족에 한글로 붙임.
+뒤의 다섯은 scripts/fetch-kfonts.py 로 받는다.

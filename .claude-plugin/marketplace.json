@@ -7,7 +7,7 @@
     {
       "name": "tempboard",
       "source": "./",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "productivity",
       "description": "One command → a temporary collaborative whiteboard site with an invite link (edit / view-only), auto-expiring. Excalidraw-based, live cursors, LaTeX math.",
       "tags": ["whiteboard", "collaboration", "excalidraw", "share"]

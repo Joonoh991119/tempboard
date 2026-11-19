@@ -1,7 +1,7 @@
 {
   "name": "tempboard-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "tempboard — Excalidraw(MIT) 위 다중 사용자 화이트보드. 빌드 결과는 dist/ (같은 출처 정적 파일).",
   "scripts": {

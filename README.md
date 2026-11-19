@@ -11,9 +11,11 @@ tempboard 1119-1843-fb4f — running · 11/19 20:43 에 닫힘
   보기 전용    https://xxxx.trycloudflare.com/?k=…#b=…
 ```
 
-- **Excalidraw 기반** 큰 도구막대(선택 · 펜 · 지우개 · 글 · LaTeX 수식 · 레이저 · 화면 이동), 한글 글꼴(Noto Sans KR · Gaegu)
+- **Excalidraw 기반** 큰 도구막대(선택 · 펜 · 지우개 · 글 · LaTeX 수식 · 레이저 · 화면 이동)
+- **한글 글꼴 7가지** — 고딕(Noto Sans KR) · 손글씨(Gaegu) · 펜글씨(나눔손글씨 펜) · 동글(주아) · 굵은 제목(검은고딕) · 명조(나눔명조) · 코드(나눔고딕코딩). 글꼴 칸에서 미리 보고 고르며, 쓰는 중에도 글꼴 · 크기를 바꿀 수 있다
+- **폰에서도** — 폰에서는 글을 아래 입력 창에 쓴다(누르는 순간 자판이 뜬다). 같은 글을 두 번 누르면 고치기. 위쪽 막대에 메뉴(목록 · 초대 · PNG 저장 · 이름 · 화면 밝기) · 실행취소 · 지우기 · 남은 시간 · 사람 수
 - **실시간 동기화** — WebSocket(안 되면 롱폴링), 커서 · 이름표, 각자 자기 작업만 실행취소, 서버가 꺼졌다 켜져도 그림 손실 없음
-- **초대 키** — 편집 링크 · 보기 전용 링크. 키 없는 접근은 403. 링크로 들어오면 키는 쿠키로 바뀌고 주소에서 지워진다
+- **초대 키** — 편집 링크 · 보기 전용 링크. 키 없는 접근은 403. 링크로 들어오면 키는 브라우저 저장소로 옮겨지고 주소에서 지워진다(쿠키를 막는 앱 안 브라우저 · 사파리에서도 열린다)
 - **임시** — Cloudflare quick tunnel(계정 불필요)로 공개 주소, 정한 시간(기본 12h)이 지나면 저절로 닫힘. 그림은 로컬에 남고 `.excalidraw` 로 꺼낼 수 있음
 - 서버는 Python 표준 라이브러리만 씀
 
@@ -52,7 +54,7 @@ tempboard 1119-1843-fb4f — running · 11/19 20:43 에 닫힘
 cd web && npm ci && npm run build && npm test     # 화면 + JS 시험
 python3 tests/test_server.py                      # 서버 시험
 python3 server/server.py --data /tmp/tb --edit-key dev   # → http://127.0.0.1:8790/?k=dev
-scripts/release-dist.sh && gh release create v0.1.0 web/tempboard-dist.tar.gz   # 배포
+scripts/release-dist.sh && gh release create v0.2.0 web/tempboard-dist.tar.gz   # 배포
 ```
 
 `server/server.py` 의 HTTP API(보드 · 요소 병합 · WebSocket · 롱폴링 · 파일)는 서버 머리말과 코드 주석에 있다. 병합 규칙은 Excalidraw 와 같다(version 큰 쪽, 같으면 versionNonce 작은 쪽).
