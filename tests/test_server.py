@@ -183,13 +183,12 @@ class Invite(unittest.TestCase):
 
     def cookie_for(self, key):
         st, h, _ = self.raw("GET", f"/?k={key}&x=1")
-        self.assertEqual(st, 302)
-        self.assertEqual(h["Location"], "/?x=1")
+        self.assertEqual(st, 200, "링크로 오면 화면을 바로 낸다(되돌려 보내지 않는다)")
         return h["Set-Cookie"].split(";")[0]
 
     def test_no_key_denied(self):
-        self.assertEqual(self.raw("GET", "/")[0], 403)
         self.assertEqual(self.raw("GET", "/api/whiteboard/boards")[0], 403)
+        self.assertEqual(self.raw("GET", "/api/whiteboard/me", {"X-Tb-Key": "wrong"})[0], 403)
         self.assertEqual(self.raw("GET", "/?k=wrong")[0], 403)
         self.assertEqual(self.raw("POST", "/api/whiteboard/login", {"Content-Type": "application/json"}, {"name": "a"})[0], 403)
         self.assertEqual(self.raw("GET", "/healthz")[0], 200)
@@ -210,6 +209,13 @@ class Invite(unittest.TestCase):
         self.assertEqual((me_e["role"], me_v["role"]), ("edit", "view"))
         self.assertEqual(me_e["invite"], {"edit": "EDITKEY123", "view": "VIEWKEY456"})
         self.assertEqual(me_v["invite"], {"view": "VIEWKEY456"}, "보기 링크로 온 사람에게 편집 키를 주지 않는다")
+
+    def test_without_cookies(self):
+        """쿠키를 막는 브라우저 — 키는 X-Tb-Key, 이름은 X-Tb-Name 머리만으로 된다."""
+        h = {"X-Tb-Key": "EDITKEY123", "X-Tb-Name": "%ED%99%8D%EA%B8%B8%EB%8F%99", "X-Whiteboard": "1", "Content-Type": "application/json"}
+        st, _, d = self.raw("GET", "/api/whiteboard/me", h)
+        self.assertEqual((st, json.loads(d)["name"], json.loads(d)["role"]), (200, "홍길동", "edit"))
+        self.assertEqual(self.raw("POST", "/api/whiteboard/boards", h, {"title": "b"})[0], 201)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 // 그림 묶음은 세 단계로 들고 있다: 보냄 → ack(서버가 받음, 사건 번호 seq) → saved(그 seq 까지 디스크에 들어감).
 // saved 를 받기 전에는 지우지 않는다 — 서버가 저장 전에 꺼져도 다시 붙으면 다시 보낸다(서버 병합은 같은 것을 두 번 받아도 같다).
 import { api } from "./api.js";
+import { KEY, getName } from "./key.js";
 
 const CHUNK = 400;          // 서버 한 번 상한(2000)보다 작게 — 잘려 사라지는 요소가 없게
 const WS_FAILS_TO_HTTP = 3; // 연달아 이만큼 못 붙으면 HTTP 로(처음 연결 여부와 상관없이)
@@ -53,7 +54,7 @@ export function connect({ id, client, sync, onEvent, onPresence, onReset, onStat
   function openWs() {
     if (!alive || mode === "http") return;
     const proto = loc.protocol === "https:" ? "wss" : "ws";
-    const q = `client=${encodeURIComponent(client)}&since=${sync.seq}&epoch=${encodeURIComponent(sync.epoch || "")}`;
+    const q = `client=${encodeURIComponent(client)}&since=${sync.seq}&epoch=${encodeURIComponent(sync.epoch || "")}${KEY ? `&k=${encodeURIComponent(KEY)}` : ""}${getName() ? `&name=${encodeURIComponent(getName())}` : ""}`;
     let opened = false;
     try { ws = new WS(`${proto}://${loc.host}/api/whiteboard/boards/${id}/ws?${q}`); } catch (_) { return failed(); }
     const giveUp = setTimeout(() => { if (!opened) { try { ws.close(); } catch (_) { /* */ } } }, 6000);

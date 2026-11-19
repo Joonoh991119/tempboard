@@ -438,6 +438,13 @@ def make_handler(store: Store, dist: Path, trust_header: str | None, test_user: 
         def role(self):
             if access.open:
                 return "edit"
+            # 쿠키를 막는 브라우저(앱 안 브라우저 · 사파리 추적 방지)도 쓰게 — 화면이 키를 머리(X-Tb-Key)나 ?k= 로도 보낸다
+            hk = self.headers.get("X-Tb-Key")
+            if hk and access.role_of(hk):
+                return access.role_of(hk)
+            qk = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("k", [None])[0]
+            if qk and access.role_of(qk):
+                return access.role_of(qk)
             c = cookies.SimpleCookie(self.headers.get("Cookie", ""))
             return access.role_of(c[access.cookie].value if access.cookie in c else None)
 
@@ -445,18 +452,17 @@ def make_handler(store: Store, dist: Path, trust_header: str | None, test_user: 
             return self.headers.get("X-Forwarded-Proto", "").lower() == "https" or "https" in self.headers.get("Cf-Visitor", "")
 
         def admit(self, u, q):
-            """링크의 ?k= 를 쿠키로 바꾸고 키 없는 주소로 보낸다(#b=… 는 브라우저가 그대로 붙인다). 처리했으면 True."""
-            if access.open or "k" not in q:
+            """링크의 ?k= — 맞으면 쿠키도 심고 화면을 바로 낸다(되돌려 보내지 않는다 — 쿠키가 막혀도 화면이 주소의 키를 쓴다).
+            화면은 키를 탭 저장소에 옮기고 주소에서 지운다. 처리했으면 True."""
+            if access.open or "k" not in q or u.path.startswith("/api/"):
                 return False
             key = q["k"][0]
-            rest = urllib.parse.urlencode([(k, v) for k, vs in q.items() if k != "k" for v in vs])
-            loc = (u.path or "/") + (("?" + rest) if rest else "")
             if not access.role_of(key):
                 self.send(403, DENIED, "text/html; charset=utf-8")
                 return True
             age = max(60, int(access.expires_at - time.time())) if access.expires_at else 30 * 86400
             ck = f"{access.cookie}={key}; Path=/; HttpOnly; SameSite=Lax; Max-Age={age}" + ("; Secure" if self.https() else "")
-            self.send(302, b"", extra={"Location": loc, "Set-Cookie": ck, "Referrer-Policy": "no-referrer"})
+            self.static("index.html", extra={"Set-Cookie": ck, "Referrer-Policy": "no-referrer"})
             return True
 
         # ---------- 공통 ----------
@@ -472,8 +478,11 @@ def make_handler(store: Store, dist: Path, trust_header: str | None, test_user: 
                 name = urllib.parse.unquote(raw).strip()[:40]
                 return {"id": name, "name": name} if name else None
             c = cookies.SimpleCookie(self.headers.get("Cookie", ""))
-            if "wb_user" in c:
-                name = urllib.parse.unquote(c["wb_user"].value)[:40]
+            raw = c["wb_user"].value if "wb_user" in c else None
+            # 쿠키가 막힌 브라우저 — 화면이 이름을 머리(X-Tb-Name)나 WebSocket 의 ?name= 로 보낸다
+            raw = raw or self.headers.get("X-Tb-Name") or urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("name", [None])[0]
+            if raw:
+                name = urllib.parse.unquote(raw).strip()[:40]
                 if name:
                     return {"id": name, "name": name}
             return None
@@ -518,13 +527,11 @@ def make_handler(store: Store, dist: Path, trust_header: str | None, test_user: 
                 return
             if path == "/healthz":
                 return self.send(200, {"ok": True})
+            if not path.startswith("/api/"):
+                return self.static(path.lstrip("/") or "index.html")   # 화면 코드는 공개 — 보드 자료는 아래 API 가 키로 막는다
             role = self.role()
             if not role:
-                if path.startswith("/api/"):
-                    return self.send(403, {"error": "invite link required"})
-                return self.send(403, DENIED, "text/html; charset=utf-8")
-            if not path.startswith("/api/"):
-                return self.static(path.lstrip("/") or "index.html")
+                return self.send(403, {"error": "invite link required"})
             if path == "/api/whiteboard/me":
                 usr = self.user()
                 if not usr:
@@ -578,7 +585,7 @@ def make_handler(store: Store, dist: Path, trust_header: str | None, test_user: 
 
         do_HEAD = do_GET
 
-        def static(self, rel):
+        def static(self, rel, extra=None):
             if ".." in rel.split("/"):
                 return self.send(404, b"", "text/plain")
             p = (dist / rel).resolve()
@@ -587,7 +594,7 @@ def make_handler(store: Store, dist: Path, trust_header: str | None, test_user: 
                 if p is None or not p.is_file():
                     return self.send(404, b"not found", "text/plain")
             return self.send(200, p.read_bytes(), MIME.get(p.suffix, "application/octet-stream"),
-                             extra={"Cache-Control": "public, max-age=3600" if "/assets/" in str(p) else "no-cache"})
+                             extra={"Cache-Control": "public, max-age=3600" if "/assets/" in str(p) else "no-cache", **(extra or {})})
 
         def presence_update(self, b, client, usr, data):
             p = {"client": client, "user": usr["name"], "short": short_name(usr["name"]), "pointer": data.get("pointer"), "button": data.get("button", "up"),

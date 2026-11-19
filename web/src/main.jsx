@@ -1,4 +1,5 @@
 import "./asset-path.js";
+import "./key.js";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@excalidraw/excalidraw/index.css";

@@ -1,7 +1,15 @@
-const H = { "Content-Type": "application/json", "X-Whiteboard": "1" };
+import { KEY, getName, setName } from "./key.js";
+
+function base() {
+  const h = { "X-Whiteboard": "1" };
+  if (KEY) h["X-Tb-Key"] = KEY;
+  const n = getName();
+  if (n) h["X-Tb-Name"] = encodeURIComponent(n);
+  return h;
+}
 
 async function req(method, url, body, signal) {
-  const r = await fetch(url, { method, headers: body ? H : { "X-Whiteboard": "1" }, credentials: "same-origin", body: body ? JSON.stringify(body) : undefined, signal });
+  const r = await fetch(url, { method, headers: body ? { "Content-Type": "application/json", ...base() } : base(), credentials: "same-origin", body: body ? JSON.stringify(body) : undefined, signal });
   if (r.status === 204) return null;
   const t = await r.text();
   const d = t ? JSON.parse(t) : null;
@@ -11,7 +19,7 @@ async function req(method, url, body, signal) {
 
 export const api = {
   me: () => req("GET", "/api/whiteboard/me"),
-  login: (name) => req("POST", "/api/whiteboard/login", { name }),
+  login: (name) => { setName(name); return req("POST", "/api/whiteboard/login", { name }); },
   boards: () => req("GET", "/api/whiteboard/boards"),
   create: (title) => req("POST", "/api/whiteboard/boards", { title }),
   board: (id) => req("GET", `/api/whiteboard/boards/${id}`),
@@ -21,5 +29,5 @@ export const api = {
   putFile: (id, client, f) => req("POST", `/api/whiteboard/boards/${id}/files`, { client, id: f.id, mimeType: f.mimeType, dataURL: f.dataURL }),
   getFile: (id, fid) => req("GET", `/api/whiteboard/boards/${id}/files/${fid}`),
   poll: (id, client, since, pver, epoch, signal, saved = -1) => req("GET", `/api/whiteboard/boards/${id}/poll?client=${encodeURIComponent(client)}&since=${since}&pver=${pver}&saved=${saved}&epoch=${encodeURIComponent(epoch || "")}`, undefined, signal),
-  events: (id, client) => new EventSource(`/api/whiteboard/boards/${id}/events?client=${encodeURIComponent(client)}`, { withCredentials: true }),
+  events: (id, client) => new EventSource(`/api/whiteboard/boards/${id}/events?client=${encodeURIComponent(client)}${KEY ? `&k=${encodeURIComponent(KEY)}` : ""}`, { withCredentials: true }),
 };
