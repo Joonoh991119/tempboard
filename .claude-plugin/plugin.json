@@ -1,0 +1,10 @@
+{
+  "name": "tempboard",
+  "version": "0.1.0",
+  "description": "Spin up a temporary, link-shared collaborative whiteboard (Excalidraw-based, live cursors, LaTeX math, Korean fonts) from Claude Code. One command gives you an invite link via a Cloudflare quick tunnel — no account, auto-expires.",
+  "author": { "name": "Joonoh Park", "url": "https://github.com/Joonoh991119" },
+  "homepage": "https://github.com/Joonoh991119/tempboard",
+  "repository": "https://github.com/Joonoh991119/tempboard",
+  "license": "MIT",
+  "keywords": ["whiteboard", "excalidraw", "collaboration", "share", "tunnel", "cloudflared", "화이트보드"]
+}

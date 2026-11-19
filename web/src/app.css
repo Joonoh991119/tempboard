@@ -1,0 +1,107 @@
+:root {
+  --wb-bg: #ffffff; --wb-fg: #1a1a1a; --wb-ink2: #4a4f55; --wb-ink3: #6b7280; --wb-rule: #d9dcdf; --wb-card: #f7f8fa;
+  --wb-accent: #3b5bdb; --wb-accent-fg: #ffffff; --wb-focus: #D55E00;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --wb-bg: #121417; --wb-fg: #e8eaed; --wb-ink2: #b4b9c0; --wb-ink3: #8b919a; --wb-rule: #2c3036; --wb-card: #1a1d21; --wb-accent: #7c93f2; --wb-accent-fg: #0b0d10; }
+}
+html, body, #root { margin: 0; height: 100%; }
+body { background: var(--wb-bg); color: var(--wb-fg); font: 15px/1.6 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+.wb-board { position: fixed; inset: 0; }
+.wb-page { max-width: 880px; margin: 0 auto; padding: 28px max(16px, env(safe-area-inset-left, 0px)) 48px; }
+.wb-muted { color: var(--wb-ink3); }
+.wb-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.wb-top h1 { margin: 0; font-size: 26px; flex: 1; }
+.wb-back { color: var(--wb-ink2); text-decoration: none; border: 1px solid var(--wb-rule); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.wb-me { font-size: 13px; color: var(--wb-ink2); border: 1px solid var(--wb-rule); border-radius: 999px; padding: 3px 10px; }
+.wb-new { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.wb-new input, .wb-login input { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 1px solid var(--wb-rule); border-radius: 10px; background: var(--wb-card); color: inherit; font: inherit; }
+.wb-primary { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--wb-accent); color: var(--wb-accent-fg); font: inherit; font-weight: 600; cursor: pointer; }
+.wb-primary:disabled { opacity: .5; cursor: default; }
+.wb-hint { color: var(--wb-ink3); font-size: 13.5px; margin: 6px 0 18px; }
+.wb-err { color: #c0392b; }
+.wb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.wb-card { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; border: 1px solid var(--wb-rule); border-radius: 12px; background: var(--wb-card); color: inherit; text-decoration: none; }
+.wb-card:hover { border-color: var(--wb-accent); }
+.wb-card strong { font-size: 16px; }
+.wb-card span { font-size: 13px; color: var(--wb-ink2); }
+.wb-card .wb-online { color: #2f9e44; font-weight: 600; }
+.wb-login { display: grid; gap: 12px; max-width: 420px; margin: 12vh auto 0; }
+.wb-login h1 { margin: 0; }
+.wb-people { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.wb-chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 2px solid var(--wb-rule); background: var(--wb-bg); color: var(--wb-fg); white-space: nowrap; }
+.wb-chip-me { border-style: dashed; }
+.wb-status { font-size: 12px; color: var(--wb-ink3); }
+
+.wb-snap { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--wb-rule); background: var(--wb-bg); color: var(--wb-fg); cursor: pointer; }
+.wb-snap:hover { border-color: var(--wb-accent); }
+.wb-chip { font-weight: 600; }
+.wb-snap { white-space: nowrap; }
+.wb-snap-short { display: none; }
+@media (max-width: 900px) { .wb-people .wb-chip:not(.wb-chip-me) { display: none; } }
+@media (max-width: 640px) { .wb-snap-long { display: none; } .wb-snap-short { display: inline; } .wb-people .wb-chip-me, .wb-status { display: none; } }
+
+/* ---------- 보드 v2: Excalidraw 기본 도구막대 · 속성 · 라이브러리를 숨기고 큰 도구막대 하나로 ---------- */
+.wb-board .excalidraw .App-toolbar-container,
+.wb-board .excalidraw .App-menu__left,
+.wb-board .excalidraw .properties-trigger,
+.wb-board .excalidraw .default-sidebar-trigger,
+.wb-board .excalidraw .sidebar-trigger,
+.wb-board .excalidraw .HintViewer,
+.wb-board .excalidraw .undo-redo-buttons,
+.wb-board .excalidraw .selected-shape-actions,
+.wb-board .excalidraw .App-toolbar { display: none !important; }
+.wb-board { --dk-bg: #ffffff; --dk-fg: #1a1a1a; --dk-mut: #5b6170; --dk-line: #dde0e5; --dk-on: #e8edff; --dk-onfg: #2b45c7; --dk-shadow: 0 6px 24px rgba(20, 24, 40, .14); }
+.wb-board.wb-theme-dark { --dk-bg: #1d2026; --dk-fg: #eceef1; --dk-mut: #a7adb8; --dk-line: #343944; --dk-on: #2b3352; --dk-onfg: #aebcff; --dk-shadow: 0 6px 24px rgba(0, 0, 0, .5); }
+.wb-dock { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 6px; padding: 8px 10px; max-width: calc(100vw - 24px); overflow-x: auto; scrollbar-width: thin;
+  background: var(--dk-bg); color: var(--dk-fg); border: 1px solid var(--dk-line); border-radius: 18px; box-shadow: var(--dk-shadow); }
+.wb-group { display: flex; align-items: center; gap: 4px; padding: 0 6px; border-right: 1px solid var(--dk-line); flex: 0 0 auto; }
+.wb-group:last-child { border-right: 0; }
+.wb-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 62px; height: 62px; padding: 4px 6px;
+  border: 0; border-radius: 12px; background: transparent; color: var(--dk-fg); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.wb-tool:hover { background: var(--dk-on); }
+.wb-tool.on { background: var(--dk-on); color: var(--dk-onfg); box-shadow: inset 0 0 0 2px var(--dk-onfg); }
+.wb-tool:focus-visible, .wb-seg:focus-visible, .wb-swatch:focus-visible { outline: 3px solid var(--dk-onfg); outline-offset: 1px; }
+.wb-swatch { width: 44px; height: 44px; border-radius: 50%; border: 2px solid transparent; background: transparent; padding: 4px; cursor: pointer; }
+.wb-swatch i { display: block; width: 100%; height: 100%; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15); }
+.wb-swatch.on { border-color: var(--dk-onfg); }
+/* 색 8개는 4 × 2 칸으로 — 도구막대 폭을 늘리지 않는다 */
+.wb-inks { position: relative; display: grid; grid-template-columns: repeat(4, 28px) 28px; grid-auto-rows: 28px; gap: 2px; }
+.wb-inks .wb-swatch { width: 28px; height: 28px; padding: 2px; }
+.wb-inks .wb-more { grid-column: 5; grid-row: 1 / span 2; height: 58px; border-radius: 14px; }
+.wb-inks .wb-more i { border-radius: 10px; display: grid; place-items: center; font: 700 18px/1 system-ui, sans-serif; color: var(--dk-onfg); box-shadow: inset 0 0 0 1px var(--dk-line); }
+.wb-more-pop { position: absolute; bottom: calc(max(14px, env(safe-area-inset-bottom, 0px)) + 96px); left: 50%; transform: translateX(-50%); z-index: 30; padding: 12px; border-radius: 14px;
+  background: var(--dk-bg); border: 1px solid var(--dk-line); box-shadow: 0 10px 30px rgba(0,0,0,.25); display: grid; gap: 10px; }
+.wb-more-grid { display: grid; grid-template-columns: repeat(6, 30px); gap: 4px; }
+.wb-more-grid .wb-swatch { width: 30px; height: 30px; padding: 2px; }
+.wb-more-custom { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--dk-onfg); }
+.wb-more-custom input { width: 44px; height: 30px; border: 0; padding: 0; background: none; cursor: pointer; }
+.wb-slider { gap: 10px; font-size: 13px; font-weight: 600; color: var(--dk-mut); }
+.wb-slider input[type=range] { width: 120px; height: 28px; accent-color: var(--dk-onfg); }
+.wb-slider b { min-width: 24px; color: var(--dk-fg); }
+.wb-dot { display: inline-block; border-radius: 50%; }
+.wb-seg { height: 44px; min-width: 64px; padding: 0 12px; border: 1px solid var(--dk-line); border-radius: 10px; background: transparent; color: var(--dk-fg); font-size: 15px; cursor: pointer; }
+.wb-seg.on { background: var(--dk-on); color: var(--dk-onfg); border-color: var(--dk-onfg); font-weight: 700; }
+.wb-font-meet { font-family: "Nunito", "Noto Sans KR", sans-serif; font-size: 14px; }
+.wb-font-cute { font-family: "Excalifont", "Gaegu", cursive; font-size: 17px; }
+.wb-font-math { font-family: "Times New Roman", serif; font-style: italic; }
+.wb-hint { font-size: 13px; color: var(--dk-mut); max-width: 220px; }
+.wb-board .wb-people { margin-right: 4px; }
+@media (max-width: 760px) {
+  .wb-dock { left: 8px; right: 8px; transform: none; max-width: none; justify-content: flex-start; border-radius: 14px; padding: 6px; }
+  .wb-tool { min-width: 50px; height: 54px; font-size: 11px; }
+  .wb-slider input[type=range] { width: 110px; }
+}
+/* 수식 창 */
+.wb-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(15, 18, 25, .45); padding: 16px; }
+.wb-modal-box { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--dk-bg); color: var(--dk-fg); border-radius: 16px; padding: 20px 22px; box-shadow: var(--dk-shadow); display: grid; gap: 12px; }
+.wb-modal-box h2 { margin: 0; font-size: 20px; }
+.wb-modal-box textarea { width: 100%; font: 16px/1.5 ui-monospace, "SF Mono", Menlo, monospace; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dk-line); background: transparent; color: inherit; resize: vertical; }
+.wb-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.wb-examples button { font: 12.5px ui-monospace, Menlo, monospace; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--dk-line); background: transparent; color: var(--dk-mut); cursor: pointer; }
+.wb-preview { min-height: 90px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--dk-line); border-radius: 12px; background: #fff; padding: 12px; overflow: auto; }
+.wb-preview img { max-width: 100%; }
+.wb-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.wb-btn { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--dk-line); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.wb-preview img.wb-stale { opacity: .35; }

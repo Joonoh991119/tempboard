@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""tempboard — 링크만 보내면 같이 그리는 임시 화이트보드 사이트.
+
+    tempboard start [--title 회의] [--ttl 12h] [--view-link] [--tunnel cloudflared|none] [--lan]
+    tempboard list                 # 지금 · 지난 사이트
+    tempboard links <id>           # 초대 링크 다시 보기
+    tempboard stop <id> | --all    # 닫기(그림은 남는다)
+    tempboard export <id> [--out DIR]   # 보드마다 .excalidraw 파일로
+    tempboard delete <id>          # 그림까지 지우기
+
+사이트 하나 = 서버 하나 + (선택) Cloudflare 임시 터널 + 초대 키 + 만료 시각. 자료는 $TEMPBOARD_HOME(기본 ~/.tempboard).
+"""
+import argparse
+import importlib.util
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tarfile
+import tempfile
+import threading
+import time
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+HOME = Path(os.environ.get("TEMPBOARD_HOME", Path.home() / ".tempboard"))
+SITES = HOME / "sites"
+DIST = Path(os.environ.get("TEMPBOARD_DIST", ROOT / "web" / "dist"))
+REPO = "Joonoh991119/tempboard"
+TUNNEL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+
+
+def version():
+    try:
+        return json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+    except (OSError, KeyError, ValueError):
+        return "0.0.0"
+
+
+def load_server():
+    spec = importlib.util.spec_from_file_location("tempboard_server", ROOT / "server" / "server.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# ------------------------------------------------------------------ 상태 파일
+def state_path(sid):
+    return SITES / sid / "state.json"
+
+
+def read_state(sid):
+    try:
+        return json.loads(state_path(sid).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def write_state(sid, st):
+    p = state_path(sid)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.chmod(tmp, 0o600)   # 초대 키가 들어 있다
+    tmp.replace(p)
+
+
+def alive(pid):
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def live_status(st):
+    if st.get("status") in ("running", "starting") and not alive(st.get("pid")):
+        return "stopped"
+    return st.get("status", "?")
+
+
+def parse_ttl(s):
+    s = str(s).strip().lower()
+    if s in ("0", "none", "forever", "무기한"):
+        return 0
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([smhd]?)", s)
+    if not m:
+        raise SystemExit(f"--ttl 을 읽지 못했다: {s} (예: 30m · 3h · 2d · 0=닫을 때까지)")
+    return int(float(m.group(1)) * {"": 3600, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)])
+
+
+def links(st):
+    out = {}
+    base = st.get("public_url") or st.get("local_url")
+    board = f"#b={st['board']}" if st.get("board") else ""
+    if base:
+        out["edit"] = f"{base}/?k={st['edit_key']}{board}"
+        if st.get("view_key"):
+            out["view"] = f"{base}/?k={st['view_key']}{board}"
+    if st.get("local_url") and st.get("public_url"):
+        out["local"] = f"{st['local_url']}/?k={st['edit_key']}{board}"
+    return out
+
+
+def lan_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+# ------------------------------------------------------------------ 웹 화면(dist)
+def ensure_dist():
+    if (DIST / "index.html").is_file():
+        return
+    ver = version()
+    url = f"https://github.com/{REPO}/releases/download/v{ver}/tempboard-dist.tar.gz"
+    print(f"화면 파일이 없어 받는다: {url}", file=sys.stderr)
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            tgz = Path(td) / "dist.tar.gz"
+            with urllib.request.urlopen(url, timeout=60) as r, open(tgz, "wb") as fh:
+                shutil.copyfileobj(r, fh)
+            out = Path(td) / "x"
+            with tarfile.open(tgz) as t:
+                for m in t.getmembers():   # 경로 탈출 막기
+                    if m.name.startswith("/") or ".." in Path(m.name).parts or not (m.isfile() or m.isdir()):
+                        raise SystemExit(f"이상한 항목: {m.name}")
+                t.extractall(out)
+            src = out / "dist" if (out / "dist").is_dir() else out
+            DIST.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(DIST))
+            return
+    except Exception as e:   # noqa: BLE001 — 받기 실패면 직접 빌드로
+        print(f"받기 실패({e}) — npm 으로 직접 빌드한다", file=sys.stderr)
+    if not shutil.which("npm"):
+        raise SystemExit("화면 파일을 받지도 빌드하지도 못했다 — Node.js(npm) 를 설치하거나 네트워크를 확인하세요")
+    web = ROOT / "web"
+    subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=web, check=True)
+    subprocess.run(["npm", "run", "build"], cwd=web, check=True)
+    if DIST != web / "dist" and not DIST.exists():
+        shutil.copytree(web / "dist", DIST)
+
+
+# ------------------------------------------------------------------ start
+def cmd_start(a):
+    ttl = parse_ttl(a.ttl)
+    if a.tunnel == "cloudflared" and not shutil.which("cloudflared"):
+        raise SystemExit("cloudflared 가 없다 — `brew install cloudflared`(macOS) 또는 https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/ . "
+                         "같은 네트워크 안에서만 쓰려면 --tunnel none --lan")
+    ensure_dist()
+    sid = time.strftime("%m%d-%H%M") + "-" + secrets.token_hex(2)
+    d = SITES / sid
+    (d / "data").mkdir(parents=True)
+    os.chmod(d, 0o700)
+    srv = load_server()
+    board = None
+    if a.title is not None:
+        store = srv.Store(d / "data")
+        board = store.create(a.title.strip() or "새 보드", {"name": a.name or "host"}).id
+    st = {"id": sid, "title": a.title or "", "board": board, "status": "starting", "created_at": time.time(),
+          "expires_at": time.time() + ttl if ttl else 0, "edit_key": secrets.token_urlsafe(18),
+          "view_key": secrets.token_urlsafe(18) if a.view_link else None, "tunnel": a.tunnel,
+          "host": "0.0.0.0" if a.lan else "127.0.0.1", "port": a.port, "pid": None, "public_url": None, "local_url": None}
+    write_state(sid, st)
+    log = open(d / "log.txt", "ab")
+    p = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "_serve", sid], stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=log, start_new_session=True)
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        time.sleep(0.3)
+        st = read_state(sid) or st
+        if st["status"] == "running" and (a.tunnel == "none" or st.get("public_url")):
+            break
+        if p.poll() is not None or st["status"] == "failed":
+            raise SystemExit(f"시작 실패 — {d / 'log.txt'}\n" + (d / "log.txt").read_text(errors="replace")[-1500:])
+    else:
+        print("주의: 45초 안에 터널 주소가 나오지 않았다 — 조금 뒤 `tempboard links " + sid + "`", file=sys.stderr)
+    show(st, a.json)
+
+
+def show(st, as_json=False):
+    ln = links(st)
+    if as_json:
+        print(json.dumps({"id": st["id"], "status": live_status(st), "expires_at": st.get("expires_at") or None, "links": ln, "data": str(SITES / st["id"] / "data")}, ensure_ascii=False))
+        return
+    exp = time.strftime("%m/%d %H:%M", time.localtime(st["expires_at"])) + " 에 닫힘" if st.get("expires_at") else "닫을 때까지 열림"
+    print(f"tempboard {st['id']} — {live_status(st)} · {exp}")
+    if "edit" in ln:
+        print(f"  같이 그리기  {ln['edit']}")
+    if "view" in ln:
+        print(f"  보기 전용    {ln['view']}")
+    if "local" in ln:
+        print(f"  (이 컴퓨터)  {ln['local']}")
+    if st.get("tunnel") == "none" and st.get("host") == "127.0.0.1":
+        print("  ※ 이 컴퓨터에서만 열린다(--tunnel none). 같은 와이파이 사람과 쓰려면 --lan, 어디서나 쓰려면 cloudflared")
+
+
+# ------------------------------------------------------------------ _serve(백그라운드 감독 프로세스)
+def cmd_serve(a):
+    sid = a.id
+    st = read_state(sid)
+    srvmod = load_server()
+    access = srvmod.Access(st["edit_key"], st.get("view_key"), site=sid, expires_at=st.get("expires_at") or 0)
+    try:
+        httpd, store = srvmod.build(SITES / sid / "data", DIST, st["host"], st.get("port") or 0, access=access)
+    except OSError as e:
+        st["status"] = "failed"; st["error"] = str(e); write_state(sid, st)
+        raise
+    port = httpd.server_address[1]
+    host = lan_ip() if st["host"] == "0.0.0.0" else "127.0.0.1"
+    st.update(pid=os.getpid(), port=port, local_url=f"http://{host}:{port}", status="running")
+    write_state(sid, st)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    print(time.strftime("%F %T"), "server", st["local_url"], flush=True)
+
+    stop = threading.Event()
+    for sg in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sg, lambda *_: stop.set())
+
+    tunnel = {"p": None}
+
+    def run_tunnel():
+        fails = 0
+        while not stop.is_set() and fails < 5:
+            p = subprocess.Popen(["cloudflared", "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace")
+            tunnel["p"] = p
+            for line in p.stderr:
+                m = TUNNEL_RE.search(line)
+                if m:
+                    cur = read_state(sid) or st
+                    if cur.get("public_url") != m.group(0):
+                        cur["public_url"] = m.group(0)
+                        cur["tunnel_restarts"] = fails
+                        write_state(sid, cur)
+                        print(time.strftime("%F %T"), "tunnel", m.group(0), flush=True)
+            p.wait()
+            if stop.is_set():
+                break
+            fails += 1
+            print(time.strftime("%F %T"), f"tunnel exited ({p.returncode}) — 다시 연다({fails})", flush=True)
+            time.sleep(min(30, 3 * fails))
+        if not stop.is_set():
+            cur = read_state(sid) or st
+            cur["public_url"] = None; cur["error"] = "터널을 다시 열지 못했다"
+            write_state(sid, cur)
+
+    if st["tunnel"] == "cloudflared":
+        threading.Thread(target=run_tunnel, daemon=True).start()
+
+    reason = "stopped"
+    while not stop.wait(1.0):
+        if st.get("expires_at") and time.time() >= st["expires_at"]:
+            reason = "expired"
+            break
+    stop.set()
+    if tunnel["p"] and tunnel["p"].poll() is None:
+        tunnel["p"].terminate()
+        try:
+            tunnel["p"].wait(5)
+        except subprocess.TimeoutExpired:
+            tunnel["p"].kill()
+    httpd.shutdown()
+    store.flush()
+    cur = read_state(sid) or st
+    cur.update(status=reason, pid=None, public_url=None, closed_at=time.time())
+    write_state(sid, cur)
+    print(time.strftime("%F %T"), reason, flush=True)
+
+
+# ------------------------------------------------------------------ 나머지
+def all_sites():
+    if not SITES.is_dir():
+        return []
+    out = [read_state(p.name) for p in SITES.iterdir() if (p / "state.json").is_file()]
+    return sorted([s for s in out if s], key=lambda s: s.get("created_at", 0), reverse=True)
+
+
+def need(sid):
+    st = read_state(sid)
+    if not st:
+        ids = [s["id"] for s in all_sites()]
+        raise SystemExit(f"사이트 {sid} 가 없다. 있는 것: {', '.join(ids) or '없음'}")
+    return st
+
+
+def cmd_list(a):
+    sites = all_sites()
+    if a.json:
+        print(json.dumps([{"id": s["id"], "title": s.get("title"), "status": live_status(s), "expires_at": s.get("expires_at") or None,
+                           "links": links(s) if live_status(s) == "running" else {}} for s in sites], ensure_ascii=False))
+        return
+    if not sites:
+        print("사이트가 없다 — tempboard start")
+        return
+    for s in sites:
+        stt = live_status(s)
+        n = len(list((SITES / s["id"] / "data" / "boards").glob("*/board.json")))
+        extra = ""
+        if stt == "running":
+            extra = " · " + (time.strftime("%m/%d %H:%M 닫힘", time.localtime(s["expires_at"])) if s.get("expires_at") else "닫을 때까지")
+        print(f"{s['id']}  {stt:8}  보드 {n}  {s.get('title') or ''}{extra}")
+
+
+def cmd_links(a):
+    st = need(a.id)
+    if live_status(st) != "running":
+        print(f"{a.id} 는 닫혀 있다({live_status(st)}). 다시 열려면 새로 start 하고, 그림은 export 로 꺼낸다.")
+        return
+    show(st, a.json)
+
+
+def cmd_stop(a):
+    targets = [s for s in all_sites() if live_status(s) == "running"] if a.all else [need(a.id)]
+    for st in targets:
+        pid = st.get("pid")
+        if alive(pid):
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(50):
+                if not alive(pid):
+                    break
+                time.sleep(0.1)
+        cur = read_state(st["id"]) or st
+        if cur.get("status") in ("running", "starting"):
+            cur.update(status="stopped", pid=None, public_url=None)
+            write_state(st["id"], cur)
+        print(f"{st['id']} 닫음 — 그림은 {SITES / st['id'] / 'data'} 에 남아 있다")
+
+
+def cmd_export(a):
+    st = need(a.id)
+    out = Path(a.out or Path.cwd() / f"tempboard-{st['id']}")
+    out.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for bj in sorted((SITES / st["id"] / "data" / "boards").glob("*/board.json")):
+        d = json.loads(bj.read_text(encoding="utf-8"))
+        els = [e for e in d.get("elements", []) if not e.get("isDeleted")]
+        files = {}
+        for e in els:
+            fid = e.get("fileId")
+            fp = bj.parent / "files" / str(fid)
+            if fid and fp.is_file():
+                files[fid] = json.loads(fp.read_text())
+        title = (d.get("meta") or {}).get("title") or bj.parent.name
+        name = re.sub(r"[^\w가-힣.-]+", "_", title).strip("_")[:60] or bj.parent.name
+        doc = {"type": "excalidraw", "version": 2, "source": "tempboard", "elements": els,
+               "appState": {"viewBackgroundColor": "#ffffff"}, "files": files}
+        (out / f"{name}-{bj.parent.name}.excalidraw").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        n += 1
+    print(f"보드 {n}개 → {out}  (excalidraw.com 에서 열거나 다시 붙여 넣을 수 있다)")
+
+
+def cmd_delete(a):
+    st = need(a.id)
+    if live_status(st) == "running":
+        raise SystemExit("열려 있는 사이트다 — 먼저 tempboard stop " + a.id)
+    if not a.yes:
+        raise SystemExit(f"그림까지 지운다: {SITES / a.id}  — 정말이면 --yes")
+    shutil.rmtree(SITES / a.id)
+    print(f"{a.id} 지움")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="tempboard", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("start", help="새 임시 사이트 열기")
+    s.add_argument("--title", default=None, help="첫 보드 이름 — 주면 링크가 그 보드로 바로 연다")
+    s.add_argument("--ttl", default="12h", help="열어 둘 시간(30m · 3h · 2d · 0=닫을 때까지). 기본 12h")
+    s.add_argument("--view-link", action="store_true", help="보기 전용 링크도 만든다")
+    s.add_argument("--tunnel", choices=["cloudflared", "none"], default="cloudflared", help="공개 주소(기본 Cloudflare 임시 터널, 계정 불필요)")
+    s.add_argument("--lan", action="store_true", help="같은 네트워크(와이파이)에서 들어올 수 있게 0.0.0.0 에 연다")
+    s.add_argument("--port", type=int, default=0)
+    s.add_argument("--name", default=None, help="첫 보드를 만든 사람 이름")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(f=cmd_start)
+    s = sub.add_parser("list", help="사이트 목록")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(f=cmd_list)
+    s = sub.add_parser("links", help="초대 링크 다시 보기")
+    s.add_argument("id")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(f=cmd_links)
+    s = sub.add_parser("stop", help="닫기(그림은 남는다)")
+    s.add_argument("id", nargs="?")
+    s.add_argument("--all", action="store_true")
+    s.set_defaults(f=cmd_stop)
+    s = sub.add_parser("export", help="보드를 .excalidraw 파일로")
+    s.add_argument("id")
+    s.add_argument("--out", default=None)
+    s.set_defaults(f=cmd_export)
+    s = sub.add_parser("delete", help="닫힌 사이트의 그림까지 지우기")
+    s.add_argument("id")
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(f=cmd_delete)
+    s = sub.add_parser("_serve")
+    s.add_argument("id")
+    s.set_defaults(f=cmd_serve)
+    a = ap.parse_args()
+    if a.cmd == "stop" and not a.id and not a.all:
+        ap.error("stop <id> 또는 --all")
+    a.f(a)
+
+
+if __name__ == "__main__":
+    main()

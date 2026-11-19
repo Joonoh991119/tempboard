@@ -1,0 +1,22 @@
+{
+  "name": "tempboard-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "tempboard — Excalidraw(MIT) 위 다중 사용자 화이트보드. 빌드 결과는 dist/ (같은 출처 정적 파일).",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "mathjax-full": "^3.2.2",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "vite": "6.3.5"
+  }
+}
